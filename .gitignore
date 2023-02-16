@@ -1,0 +1,10 @@
+main.py
+.config/
+.git/
+venv/
+later.txt
+.replit
+replit.nix
+.upm/
+poetry.lock
+pyproject.toml
