@@ -7,7 +7,7 @@ import numpy as np
 
 #################### Image Processing Methods
 
-def CreateHistogram(image, title, show=False):
+def CreateHistogram(image, title="", show=False):
   width, height = image.size;
   pixel = image.load();
 
@@ -59,6 +59,9 @@ def L_To_RGB(image, color):
       if (color.lower()  == 'b'): rPx[x, y] = (0, 0, pX[x, y]);
   return Result;
 
+def toGrayScale(image):
+  return ImageOps.grayscale(image);
+
 ########## Image Arithmetic
 
 def AddImages(image1, image2, alpha = 1):
@@ -75,13 +78,49 @@ def AddImages(image1, image2, alpha = 1):
 
 ########## Image Filters
 
+def ContrastStretch(image): 
+  sW, sH = image.size;
+  pX = image.load();
+  data = CreateHistogram(image);
+  
+  for x in range(sW):
+    for y in range(sH):
+      pX[x, y] = round(((pX[x, y] - min(data)) / (max(data) - min(data))) * 255);
+  return image;
+
+def Equalize(image):
+  return ImageOps.equalize(image);
+
 def GammaCorrect(image, gamma, modifier=1):
   sW, sH = image.size;
   pX = image.load();
   for  x in range(sW):
     for y in range(sH):
       pX[x, y] = round(modifier * pow(pX[x, y], gamma));
-  return iage;
+  return image;
+
+def ApplyKernal(image, kernal):
+  size = math.sqrt(len(kernal));
+  if (size % 2 == 0): size += 1;
+  offset = math.floor(size / 2);
+  localMatrix = [];
+  
+  sW, sH = image.size;
+  pX = image.load();
+
+  Output = Image.new('L', (sW, sH), 0);
+  oX = Output.load();
+
+  for x in range(1, sW - 1):
+    for y in range(1, sH - 1):
+      for subX in range(-1 * offset, offset + 1):
+        for subY in range(-1 * offset, offset + 1):
+          localMatrix.append(pX[x + subX, y + subY]);
+      for v in range(round(size * size)):
+        localMatrix[v] = localMatrix[v] * kernal[v];
+      oX[x, y] = sum(localMatrix);
+      localMatrix = [];
+  return Output;
 
 ########## Noise Generations
 
@@ -106,7 +145,7 @@ def CreateImpulse(image, chance):
     for y in range(h):
       rand = random.randint(1, 100);
       if (rand < chance):
-        if (rand < 50): 
+        if (random.randint(0, 9) < 4): 
           noisePx[x, y] = 255;
         else: noisePx[x, y] = 0;
   return noiseResult;
@@ -114,7 +153,7 @@ def CreateImpulse(image, chance):
 ########## Noise Filters
 
 def MedianNoiseFilter(image, size=3):
-  if (size % 3 == 0): size += 1;
+  if (size % 2 == 0): size += 1;
   pW, pH = image.size;
   pixel = image.load();
   Result = Image.new('L', (pW, pH), 0);
@@ -122,8 +161,8 @@ def MedianNoiseFilter(image, size=3):
   offset = math.floor(size / 2);
 
   localMean = [];
-  for x in range(1, pW - 1):
-    for y in range(1, pH - 1):
+  for x in range(offset, pW - offset):
+    for y in range(offset, pH - offset):
       for subX in range(-1 * offset, offset):
         for subY in range(-1 * offset, offset):
           localMean.append(pixel[x + subX, y + subY]);
@@ -134,7 +173,7 @@ def MedianNoiseFilter(image, size=3):
   return Result;
 
 def MeanNoiseFilter(img, size=3):
-  if (size % 3 == 0): size += 1;
+  if (size % 2 == 0): size += 1;
   pW, pH = img.size;
   pixel = img.load();
   Result = Image.new('L', (pW, pH), 0);
@@ -142,8 +181,8 @@ def MeanNoiseFilter(img, size=3):
   offset = math.floor(size / 2);
 
   localMean = 0;
-  for x in range(1, pW - 1):
-    for y in range(1, pH - 1):
+  for x in range(offset, pW - offset):
+    for y in range(offset, pH - offset):
       for subX in range(-1 *offset, offset):
         for subY in range(-1 *offset, offset):
           localMean += pixel[x + subX, y + subY];
