@@ -73,10 +73,50 @@ def AddImages(image1, image2, alpha = 1):
 
   for x in range(sW):
     for y in range(sH):
-      p1[x, y] = round(p1[x, y] + (p2[x, y] * alpha));
+      p1[x, y] = round(p1[x, y] + p2[x, y] * alpha);
   return image1;
 
+def SubImages(image1, image2, alpha = 1):
+  if (alpha > 1): alpha = 1;
+  if (alpha < 0): alpha = 0;
+  sW, sH = image2.size;
+  p1 = image1.load();
+  p2 = image2.load();
+  Result = Image.new('L', (sW, sH), 0);
+  ResultPx = Result.load();
+
+  for x in range(sW):
+    for y in range(sH):
+      ResultPx[x, y] = round(p1[x, y] - p2[x, y] * alpha);
+  return Result;
+
 ########## Image Filters
+
+def AlphaTrim(image, alpha=0, size=3):
+  offset = math.floor(size / 2);
+  
+  sW, sH = image.size;
+  pX = image.load();
+  Result = Image.new('L', (sW, sH), 0);
+  ResultPx = Result.load();
+  
+  Neighborhood = [];
+  AlphaTrim = [];
+  
+  for x in range(offset, sW - offset):
+      for y in range(offset, sH - offset):
+        
+        for subX in range(-1 * offset, offset + 1):
+          for subY in range(-1 * offset, offset + 1):
+            Neighborhood.append(pX[x + subX, y + subY]);
+        Neighborhood.sort();
+        for V in range(0 + alpha, len(Neighborhood) - alpha):
+          AlphaTrim.append(Neighborhood[V]);
+        ResultPx[x, y] = round(sum(AlphaTrim) / len(AlphaTrim));
+        Neighborhood = [];
+        AlphaTrim = [];
+  return Result;
+
 
 def ContrastStretch(image): 
   sW, sH = image.size;
@@ -99,8 +139,14 @@ def GammaCorrect(image, gamma, modifier=1):
       pX[x, y] = round(modifier * pow(pX[x, y], gamma));
   return image;
 
-def ApplyKernal(image, kernal):
-  size = math.sqrt(len(kernal));
+def SharpenImage(image, size=3):
+  image = toGrayScale(image);
+  Smooth = SmoothImage(image, size);
+  Detail = SubImages(image, Smooth);
+  image = AddImages(image, Detail);
+  return image;
+
+def SmoothImage(image, size=3):
   if (size % 2 == 0): size += 1;
   offset = math.floor(size / 2);
   localMatrix = [];
@@ -111,14 +157,12 @@ def ApplyKernal(image, kernal):
   Output = Image.new('L', (sW, sH), 0);
   oX = Output.load();
 
-  for x in range(1, sW - 1):
-    for y in range(1, sH - 1):
+  for x in range(offset, sW - offset):
+    for y in range(offset, sH - offset):
       for subX in range(-1 * offset, offset + 1):
         for subY in range(-1 * offset, offset + 1):
           localMatrix.append(pX[x + subX, y + subY]);
-      for v in range(round(size * size)):
-        localMatrix[v] = localMatrix[v] * kernal[v];
-      oX[x, y] = sum(localMatrix);
+      oX[x, y] = round(1/9 * sum(localMatrix));
       localMatrix = [];
   return Output;
 
@@ -152,7 +196,13 @@ def CreateImpulse(image, chance):
 
 ########## Noise Filters
 
-def MedianNoiseFilter(image, size=3):
+def MinFilter(image, size=3):
+  return image.filter(ImageFilter.MinFilter(size));
+
+def MaxFilter(image, size=3):
+  return image.filter(ImageFilter.MaxFilter(size));
+
+def MedianFilter(image, size=3):
   if (size % 2 == 0): size += 1;
   pW, pH = image.size;
   pixel = image.load();
@@ -172,7 +222,30 @@ def MedianNoiseFilter(image, size=3):
       localMean = [];
   return Result;
 
-def MeanNoiseFilter(img, size=3):
+def WeightedMeanFilter(image, Weight):
+  size = math.sqrt(len(Weight));
+  if (size % 2 == 0): size += 1;
+  pW, pH = image.size;
+  pixel = image.load();
+  Result = Image.new('L', (pW, pH), 0);
+  ResultPx = Result.load();
+  offset = math.floor(size / 2);
+
+  localMatrix = [];
+  Numerator = 0;
+  for x in range(offset, pW - offset):
+    for y in range(offset, pH - offset):
+      for subX in range(-1 *offset, offset + 1):
+        for subY in range(-1 *offset, offset + 1):
+          localMatrix.append(pixel[x + subX, y + subY]);
+      for V in range(round(size * size)): 
+        Numerator += localMatrix[V] * Weight[V];
+      ResultPx[x, y] = round(Numerator / sum(Weight));
+      localMatrix = [];
+      Numerator = 0;
+  return Result;
+
+def MeanFilter(img, size=3):
   if (size % 2 == 0): size += 1;
   pW, pH = img.size;
   pixel = img.load();
