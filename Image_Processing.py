@@ -2,10 +2,12 @@
 
 from PIL import Image, ImageOps, ImageFilter
 import matplotlib.pyplot as plt
-import math, random
+import math, random, statistics
 import numpy as np
 
 #################### Image Processing Methods
+
+########## Utility Methods
 
 def CreateHistogram(image, title="", show=False):
   width, height = image.size;
@@ -20,15 +22,13 @@ def CreateHistogram(image, title="", show=False):
     for y in range(height):
       histogram[pixel[x, y]] += 1;
 
-  plt.plot(range(256), histogram);    
+  plt.bar(range(256), histogram);    
   plt.xlabel('Luminosity')
   plt.ylabel('Frequency')
   plt.title(title)
   if (show): plt.show();
 
   return histogram;
-
-########## Utility Methods
 
 def splitChannels(image): 
   sW, sH = image.size;
@@ -62,6 +62,112 @@ def L_To_RGB(image, color):
 def toGrayScale(image):
   return ImageOps.grayscale(image);
 
+def GlobalThreshold(image, OR=0):
+  sW, sH = image.size;
+  pX = image.load();
+  Result = Image.new("1", (sW, sH), 0);
+  rX = Result.load();
+  LumValues = CreateHistogram(image);
+  maxL, minL = max(LumValues), min(LumValues);
+  for V in range(256):
+    if (LumValues[V] == maxL): maxL = V;
+    if (LumValues[V] == minL): minL = V;
+  T = (round((maxL + minL) / 2) * (not OR)) + OR;
+  print(T);
+  
+  for x in range(sW):
+    for y in range(sH):
+      if (pX[x, y] <= T): rX[x, y] = 0;
+      else: rX[x, y] = 1;
+
+  return Result;
+
+def LocalThreshold(image, split=3):
+  sW, sH = image.size;
+  pX = image.load();
+  Result = Image.new("1", (sW, sH), 0);
+  rX = Result.load();
+  wSegL = round(sW / split);
+  hSegL = round(sH / split);
+
+  segData = [];
+  segMax, segMin = 0, 0;
+  segT = 0;
+  
+  for wSeg in range(split):
+    for hSeg in range(split):
+      for currPass in range(2):
+        for x in range(wSeg * wSegL, (wSeg + 1) * wSegL):
+          for y in range(hSeg * hSegL, (hSeg + 1) * hSegL):
+            if (x >= sW or y >= sH): continue;
+            if (not currPass): segData.append(pX[x, y]);
+            else: 
+              if (pX[x, y] <= segT): rX[x, y] = 0;
+              else: rX[x, y] = 1;
+        if (not currPass): segMax = max(segData);
+        if (not currPass): segMin = min(segData);
+        segT = round((segMax + segMin) / 2);
+        segData = [];
+  return Result;
+
+def NiblackThreshold(image, split=3, k=-.2):
+  sW, sH = image.size;
+  pX = image.load();
+  Result = Image.new("1", (sW, sH), 0);
+  rX = Result.load();
+  wSegL = round(sW / split);
+  hSegL = round(sH / split);
+
+  segData = [];
+  segMax, segMin = 0, 0;
+  segT = 0;
+  
+  for wSeg in range(split):
+    for hSeg in range(split):
+      for currPass in range(2):
+        for x in range(wSeg * wSegL, (wSeg + 1) * wSegL):
+          for y in range(hSeg * hSegL, (hSeg + 1) * hSegL):
+            if (x >= sW or y >= sH): continue;
+            if (not currPass): segData.append(pX[x, y]);
+            else: 
+              if (pX[x, y] <= segT): rX[x, y] = 0;
+              else: rX[x, y] = 1;
+        if (not currPass): 
+          segMax = max(segData);
+          segMin = min(segData);
+          segT = round((segMax + segMin) / 2) + (k * statistics.stdev(segData))
+        segData = [];
+  return Result;
+
+def SauvolaThreshold(image, split=3, k=.5, R=128):
+  sW, sH = image.size;
+  pX = image.load();
+  Result = Image.new("1", (sW, sH), 0);
+  rX = Result.load();
+  wSegL = round(sW / split);
+  hSegL = round(sH / split);
+
+  segData = [];
+  segMax, segMin = 0, 0;
+  segT = 0;
+  
+  for wSeg in range(split):
+    for hSeg in range(split):
+      for currPass in range(2):
+        for x in range(wSeg * wSegL, (wSeg + 1) * wSegL):
+          for y in range(hSeg * hSegL, (hSeg + 1) * hSegL):
+            if (x >= sW or y >= sH): continue;
+            if (not currPass): segData.append(pX[x, y]);
+            else: 
+              if (pX[x, y] <= segT): rX[x, y] = 0;
+              else: rX[x, y] = 1;
+        if (not currPass): 
+          segMax = max(segData);
+          segMin = min(segData);
+          segT = round((segMax + segMin) / 2) * (1 + k * ((statistics.stdev(segData)/R) - 1))
+        segData = [];
+  return Result;
+      
 ########## Image Arithmetic
 
 def AddImages(image1, image2, alpha = 1):
