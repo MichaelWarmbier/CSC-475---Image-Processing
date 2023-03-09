@@ -2,31 +2,51 @@
 
 from PIL import Image, ImageOps, ImageFilter
 import matplotlib.pyplot as plt
-import math, random, statistics
+import math, random, statistics, sys
 import numpy as np
 
 #################### Image Processing Methods
 
 ########## Utility Methods
 
-def CreateHistogram(image, title="", show=False):
+def GenerateMagnitude(*image):
+  sW, sH = image[0].size;
+  pX = [];
+  for arg in image: pX.append(arg.load());
+
+  values = []
+    
+  for x in range(sW):
+    for y in range(sH):
+      for v in range(len(image)): values.append(pow(pX[v][x, y], 2));
+      pX[0][x, y] = round(np.sqrt(sum(values)));
+      values = [];
+
+  return image[0];
+
+def CreateHistogram(image, mode="L", title="", show=False):
   width, height = image.size;
   pixel = image.load();
 
   histogram = [];
 
-  for intensity in range(256):
+  if (mode == '1'): mode = 2;
+  else: mode = 256;
+
+  
+  for intensity in range(mode):
     histogram.append(0);
 
   for x in range(width):
     for y in range(height):
       histogram[pixel[x, y]] += 1;
 
-  plt.bar(range(256), histogram);    
-  plt.xlabel('Luminosity')
-  plt.ylabel('Frequency')
-  plt.title(title)
-  if (show): plt.show();
+  if (show):
+    plt.bar(range(mode), histogram);    
+    plt.xlabel('Luminosity')
+    plt.ylabel('Frequency')
+    plt.title(title)
+    plt.show();
 
   return histogram;
 
@@ -54,9 +74,9 @@ def L_To_RGB(image, color):
   rPx = Result.load();
   for x in range(sW):
     for y in range(sH):   
-      if (color.lower()  == 'r'): rPx[x, y] = (pX[x, y], 0, 0);
-      if (color.lower()  == 'g'): rPx[x, y] = (0, pX[x, y], 0);
-      if (color.lower()  == 'b'): rPx[x, y] = (0, 0, pX[x, y]);
+      if (color.lower() == 'r'): rPx[x, y] = (pX[x, y], 0, 0);
+      if (color.lower() == 'g'): rPx[x, y] = (0, pX[x, y], 0);
+      if (color.lower() == 'b'): rPx[x, y] = (0, 0, pX[x, y]);
   return Result;
 
 def toGrayScale(image):
@@ -73,7 +93,6 @@ def GlobalThreshold(image, OR=0):
     if (LumValues[V] == maxL): maxL = V;
     if (LumValues[V] == minL): minL = V;
   T = (round((maxL + minL) / 2) * (not OR)) + OR;
-  print(T);
   
   for x in range(sW):
     for y in range(sH):
@@ -81,6 +100,25 @@ def GlobalThreshold(image, OR=0):
       else: rX[x, y] = 1;
 
   return Result;
+
+def GlobalThreshold_Grayscale(image, OR=0):
+  sW, sH = image.size;
+  pX = image.load();
+  R1, R2 = Image.new("L", (sW, sH), 0), Image.new("L", (sW, sH), 0);
+  rX1, rX2 = R1.load(), R2.load();
+  LumValues = CreateHistogram(image);
+  maxL, minL = max(LumValues), min(LumValues);
+  for V in range(256):
+    if (LumValues[V] == maxL): maxL = V;
+    if (LumValues[V] == minL): minL = V;
+  T = (round((maxL + minL) / 2) * (not OR)) + OR;
+  
+  for x in range(sW):
+    for y in range(sH):
+      if (pX[x, y] <= T): rX1[x, y] = pX[x, y];
+      else: rX2[x, y] = pX[x, y];
+
+  return [R1, R2];
 
 def LocalThreshold(image, split=3):
   sW, sH = image.size;
@@ -166,6 +204,63 @@ def SauvolaThreshold(image, split=3, k=.5, R=128):
           segMin = min(segData);
           segT = round((segMax + segMin) / 2) * (1 + k * ((statistics.stdev(segData)/R) - 1))
         segData = [];
+  return Result;
+
+def BernsenThreshold(image, size=3, cMin=15):
+  offset = math.floor(size / 2);
+  
+  sW, sH = image.size;
+  pX = image.load();
+  Result = Image.new('1', (sW, sH), 0);
+  rX = Result.load();
+  
+  Neighborhood = [];
+  T, C, lMax, lMin = 0, 0, 0, 0;
+  
+  for x in range(offset, sW - offset):
+    for y in range(offset, sH - offset):
+      for subX in range(-1 * offset, offset + 1):
+        for subY in range(-1 * offset, offset + 1):
+          Neighborhood.append(pX[x + subX, y + subY]);
+      lMax = max(Neighborhood);
+      lMin = min(Neighborhood);
+      T = round((lMax - lMin) / 2);
+      C = lMax - lMin;
+      if (pX[x, y] <= T or C < cMin): rX[x, y] = 1;
+      else: rX[x, y] = 0;
+      Neighborhood = [];
+
+  return Result;
+
+def InvertImage(image):
+  sW, sH = image.size;
+  pX = image.load();
+
+  for x in range(sW):
+    for y in range(sH):
+      pX[x, y] = 255 - pX[x, y];
+
+  return image;
+
+def ApplyMask(image, mask):
+  M = len(mask);
+  offset = math.floor(round(np.sqrt(M)) / 2);
+  sW, sH = image.size;
+  pX = image.load();
+  Result = Image.new('L', (sW, sH), 0);
+  rX = Result.load();
+  Local = [];
+
+  for x in range(offset, sW - offset):
+    for y in range(offset, sH - offset):
+      for subX in range(-1 * offset, offset + 1):
+        for subY in range(-1 * offset, offset + 1):
+          Local.append(pX[x + subX, y + subY]);
+      for V in range(M):
+        Local[V] *= mask[V];
+        rX[x, y] = round(sum(Local)); 
+      Local = [];
+
   return Result;
       
 ########## Image Arithmetic
@@ -369,3 +464,157 @@ def MeanFilter(img, size=3):
       ResultPx[x, y] = round(localMean / pow(size, 2));
       localMean = 0;
   return Result;
+
+#################### Internal Data
+
+Sobel_Right = [
+  -1, 0, 1,
+  -2, 0, 2,
+  -1, 0, 1
+]
+
+Sobel_Left = [
+  1, 0, -1,
+  2, 0, -2,
+  1, 0, -1
+]
+
+Sobel_Up = [
+   1,  2,  1,
+   0,  0,  0,
+  -1, -2, -1
+]
+
+Sobel_Down = [
+  -1,  -2,  -1,
+  0,  0,  0,
+  1,  2,  1
+]
+
+FreiChen_Right = [
+  -1, 0, 1,
+  -1 * np.sqrt(2), 0, np.sqrt(2),
+  -1, 0, 1
+]
+
+FreiChen_Left = [
+  1, 0, -1,
+  np.sqrt(2), 0, -1 * np.sqrt(2),
+  1, 0, -1
+]
+
+FreiChen_Down = [
+   -1, -1 * np.sqrt(2),  -1,
+   0,  0,  0,
+   1, np.sqrt(2), 1
+]
+
+FreiChen_Up = [
+   1,  np.sqrt(2),  1,
+   0,  0,  0,
+  -1, -1 * np.sqrt(2), -1
+]
+
+Robinson_0 = [
+  -1,  0,  1,
+  -2,  0,  2,
+  -1,  0,  1
+]
+
+Robinson_45 = [
+   0,  1,  2,
+  -1,  0,  1,
+  -2, -1,  0
+]
+
+Robinson_90 = [
+   1,  2,  1,
+   0,  0,  0,
+  -1, -2, -1
+]
+
+Robinson_135 = [
+   2,  1,  0,
+   1,  0, -1,
+   0, -1, -2
+]
+
+Robinson_180 = [
+   1,  0, -1,
+   2,  0, -2,
+   1,  0, -1
+]
+
+Robinson_225 = [
+   0, -1, -2,
+   1,  0, -1,
+   2,  1,  0
+]
+
+Robinson_270 = [
+   1,  2,  1,
+   0,  0,  0,
+  -1,  -2,  -1
+]
+
+Robinson_315 = [
+  -2, -1,  0,
+  -1,  0,  1,
+   0,  1,  2
+]
+
+Kirsch_0 = [
+  -3, -3,  5,
+  -3,  0,  5,
+  -3, -3,  5
+]
+
+Kirsch_45 = [
+  -3,  5,  5,
+  -3,  0,  5,
+  -3, -3, -3
+]
+
+Kirsch_90 = [
+   5,  5,  5,
+  -3,  0, -3,
+  -3, -3, -3
+]
+
+Kirsch_135 = [
+   5,  5,  -3,
+   5,  0, -3,
+  -3, -3, -3
+]
+
+Kirsch_180 = [
+   5, -3, -3,
+   5,  0, -3,
+   5, -3, -3
+]
+
+Kirsch_225 = [
+  -3, -3, -3,
+   5,  0, -3,
+   5,  5, -3
+]
+
+Kirsch_270 = [
+  -3, -3,  -3,
+  -3,  0,  -3,
+   5,  5,   5
+]
+
+Kirsch_315 = [
+  -3, -3,  5,
+  -3,  0,  5,
+  -3, -3,  5
+]
+
+NevatiaBabu_0 = [
+  -100, -100, 0, 100, 100
+  -100, -100, 0, 100, 100,
+  -100, -100, 0, 100, 100,
+  -100, -100, 0, 100, 100,
+  -100, -100, 0, 100, 100
+]
