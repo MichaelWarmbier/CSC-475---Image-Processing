@@ -9,6 +9,52 @@ import numpy as np
 
 ########## Utility Methods
 
+def Dilate(image, struct):
+  sW, sH = image.size;
+  pX = image.load();
+  Result = Image.new("L", (sW, sH), 0);
+  rX = Result.load();
+  isOdd = (len(struct) % 2 != 0);
+  offset = math.floor(np.sqrt(len(struct))/2);
+  LocalArea = [];
+  Values = []
+
+  for x in range(offset, sW - offset):
+    for y in range(offset, sH - offset):
+      for subX in range(-1 * offset, offset + (isOdd)):
+        for subY in range(-1 * offset, offset + (isOdd)):
+          LocalArea.append(pX[x + subX, y + subY]);
+      for v in range(len(LocalArea)):
+        if (struct[v]): Values.append(LocalArea[v]);
+      rX[x, y] = max(Values);
+      LocalArea = [];
+      Values = [];
+
+  return Result;
+
+def Erode(image, struct):
+  sW, sH = image.size;
+  pX = image.load();
+  Result = Image.new("L", (sW, sH), 0);
+  rX = Result.load();
+  isOdd = (len(struct) % 2 != 0);
+  offset = math.floor(np.sqrt(len(struct))/2);
+  LocalArea = [];
+  Values = []
+
+  for x in range(offset, sW - offset):
+    for y in range(offset, sH - offset):
+      for subX in range(-1 * offset, offset + (isOdd)):
+        for subY in range(-1 * offset, offset + (isOdd)):
+          LocalArea.append(pX[x + subX, y + subY]);
+      for v in range(len(LocalArea)):
+        if (struct[v]): Values.append(LocalArea[v]);
+      rX[x, y] = min(Values);
+      LocalArea = [];
+      Values = [];
+
+  return Result;
+
 def GenerateMagnitude(*image):
   sW, sH = image[0].size;
   pX = [];
@@ -23,6 +69,32 @@ def GenerateMagnitude(*image):
       values = [];
 
   return image[0];
+
+def GenerateMaxResult(*image):
+  sW, sH = image[0].size;
+  pX = [];
+  for arg in image: pX.append(arg.load());
+
+  values = []
+    
+  for x in range(sW):
+    for y in range(sH):
+      for v in range(len(image)): values.append(pX[v][x, y]);
+      pX[0][x, y] = max(values);
+      values = [];
+
+  return image[0];
+
+def GenerateDirection(image1, image2):
+  sW, sH = image1.size;
+  pX1 = image1.load();
+  pX2 = image2.load();
+    
+  for x in range(sW):
+    for y in range(sH):
+      pX1[x, y] = round(np.degrees(np.arctan2(pX1[x, y], (pX2[x, y] + 1))));
+
+  return image1;
 
 def CreateHistogram(image, mode="L", title="", show=False):
   width, height = image.size;
@@ -82,6 +154,33 @@ def L_To_RGB(image, color):
 
 def toGrayScale(image):
   return ImageOps.grayscale(image);
+
+def GaussianSmoothing(image):
+  sW, sH = image.size;
+  pX = image.load();
+  Result = Image.new("L", (sW, sH), 0);
+  rX = Result.load();
+
+  Kernal = [
+    1,  4,  7,  4,  1,
+    4, 16, 26, 16,  4,
+    7, 26, 41, 26,  7,
+    4, 16, 26, 16,  4,
+    1,  4,  7,  4,  1
+  ]
+  LocalArea = []
+
+  for x in range(1, sW - 3):
+    for y in range(1, sH - 3):
+      for subX in range(-2, 3):
+        for subY in range(-2, 3):
+          LocalArea.append(pX[x + subX, y + subY]);
+      for V in range(len(LocalArea)):
+        LocalArea[V] *= Kernal[V];
+      rX[x, y] = round((1/273) * sum(LocalArea));
+      LocalArea = [];
+
+  return Result;
 
 def GlobalThreshold(image, OR=0):
   sW, sH = image.size;
@@ -330,9 +429,6 @@ def ContrastStretch(image):
       pX[x, y] = round(((pX[x, y] - min(data)) / (max(data) - min(data))) * 255);
   return image;
 
-def Equalize(image):
-  return ImageOps.equalize(image);
-
 def GammaCorrect(image, gamma, modifier=1):
   sW, sH = image.size;
   pX = image.load();
@@ -555,7 +651,7 @@ Robinson_225 = [
 Robinson_270 = [
    1,  2,  1,
    0,  0,  0,
-  -1,  -2,  -1
+  -1, -2, -1
 ]
 
 Robinson_315 = [
