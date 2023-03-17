@@ -9,6 +9,21 @@ import numpy as np
 
 ########## Utility Methods
 
+def BitSplit(image):
+  pX = image.load();
+  sW, sH = image.size;
+  Layers = [];
+  BinPx = [];
+  for im in range(8): 
+    Layers.append(Image.new('1', (sW, sH), 0));
+    BinPx.append(Layers[im].load());
+  for x in range(sW):
+    for y in range(sH):
+      binData = bin(pX[x, y]).replace("0b", "")[::-1];
+      for im in range(len(binData)): BinPx[im][x, y] = int(binData[im]);
+
+  return Layers;
+
 def Dilate(image, struct):
   sW, sH = image.size;
   pX = image.load();
@@ -432,7 +447,7 @@ def ContrastStretch(image):
 def GammaCorrect(image, gamma, modifier=1):
   sW, sH = image.size;
   pX = image.load();
-  for  x in range(sW):
+  for x in range(sW):
     for y in range(sH):
       pX[x, y] = round(modifier * pow(pX[x, y], gamma));
   return image;
