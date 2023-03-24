@@ -27,7 +27,7 @@ def BitSplit(image):
 def Dilate(image, struct):
   sW, sH = image.size;
   pX = image.load();
-  Result = Image.new("L", (sW, sH), 0);
+  Result = Image.new("1", (sW, sH), 0);
   rX = Result.load();
   isOdd = (len(struct) % 2 != 0);
   offset = math.floor(np.sqrt(len(struct))/2);
@@ -44,13 +44,13 @@ def Dilate(image, struct):
       rX[x, y] = max(Values);
       LocalArea = [];
       Values = [];
-
+  Result.save("Test.png");
   return Result;
 
 def Erode(image, struct):
   sW, sH = image.size;
   pX = image.load();
-  Result = Image.new("L", (sW, sH), 0);
+  Result = Image.new("1", (sW, sH), 0);
   rX = Result.load();
   isOdd = (len(struct) % 2 != 0);
   offset = math.floor(np.sqrt(len(struct))/2);
@@ -69,6 +69,58 @@ def Erode(image, struct):
       Values = [];
 
   return Result;
+
+def FindObject(image1, image2):
+  sW, sH = image1.size;
+  mW, mH = image2.size;
+  pX = image1.load();
+  mX = image2.load();
+  wSegC = round(sW / mW);
+  hSegC = round(sH / mH);
+  wSegL = mW;
+  hSegL = mH;
+  Output = Image.new('1', (sW, sH), 0);
+  oX = Output.load();
+
+  modValues = 0;
+  origValues = [];
+
+  for x in range(mW):
+    for y in range(mH):
+      modValues+= mX[x, y];
+
+  index = 0;
+  for wSeg in range(wSegC):
+    for hSeg in range(hSegC):
+      origValues.append(0)
+      for x in range(wSeg * wSegL, (wSeg + 1) * wSegL):
+        for y in range(hSeg * hSegL, (hSeg + 1) * hSegL):
+          if (x >= sW or y >= sH): continue;
+          origValues[index] += pX[x, y];
+      origValues[index] = abs((modValues - origValues[index]) / origValues[index]);
+      index += 1;
+  
+  Location = smallestIndex(origValues);
+  print(origValues);
+  
+  index = 0;
+  for wSeg in range(wSegC):
+    for hSeg in range(hSegC):
+      if (index == Location):
+        for x in range(wSeg * wSegL, (wSeg + 1) * wSegL):
+          for y in range(hSeg * hSegL, (hSeg + 1) * hSegL):
+            if (x >= sW or y >= sH): continue;
+            if (x == wSeg * wSegL or 
+            x == (wSeg + 1) * wSegL - 1 or
+            y == hSeg * hSegL or
+            y == (hSeg + 1) * hSegL - 1): oX[x, y] = 1;
+        return Output;
+      index += 1;
+
+def smallestIndex(values):
+  minV = min(values);
+  index = values.index(minV);
+  return index;
 
 def GenerateMagnitude(*image):
   sW, sH = image[0].size;
@@ -350,11 +402,17 @@ def BernsenThreshold(image, size=3, cMin=15):
 def Invert(image):
   sW, sH = image.size;
   pX = image.load();
-
   for x in range(sW):
     for y in range(sH):
       pX[x, y] = 255 - pX[x, y];
+  return image;
 
+def BinInvert(image):
+  sW, sH = image.size;
+  pX = image.load();
+  for x in range(sW):
+    for y in range(sH):
+      pX[x, y] = not pX[x, y];
   return image;
 
 def ApplyMask(image, mask):
@@ -404,6 +462,19 @@ def SubImages(image1, image2, alpha = 1):
   for x in range(sW):
     for y in range(sH):
       ResultPx[x, y] = round(p1[x, y] - p2[x, y] * alpha);
+  return Result;
+
+def MultiplyImages(image1, image2, alpha=1):
+  if (alpha > 1): alpha = 1;
+  if (alpha < 0): alpha = 0;
+  sW, sH = image2.size;
+  p1 = image1.load();
+  p2 = image2.load();
+  Result = Image.new('L', (sW, sH), 0); 
+  rX = Result.load();
+  for x in range(sW):
+    for y in range(sH):
+      rX[x, y] = p1[x, y] * p2[x, y] * alpha;
   return Result;
 
 ########## Image Filters
