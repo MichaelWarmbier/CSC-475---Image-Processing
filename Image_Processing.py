@@ -4,10 +4,36 @@ from PIL import Image, ImageOps, ImageFilter
 import matplotlib.pyplot as plt
 import math, random, statistics, sys
 import numpy as np
+import time
+import cv2
+
 
 #################### Image Processing Methods
 
 ########## Utility Methods
+
+def getTime():
+  return time.time();
+
+def getLuminosityRange(img):
+  Hist = CreateHistogram(img, "L", "", False);
+  minIndex = -1;
+  maxIndex = 0;
+  for v in range(len(Hist)):
+    if (Hist[v]):
+      if (v > maxIndex): maxIndex = v;
+      if (minIndex == -1): minIndex = v;
+
+  return maxIndex - minIndex;
+
+def BinZeroPad(image, size=1, BinColor = 0):
+  sW, sH = image.size;
+  pX = image.load();
+  for x in range(sW):
+    for y in range(sH):
+      if (x < size or y < size or x > (sW - size - 1) or y > (sH - size - 1)):
+        pX[x, y] = 0;
+  return image;
 
 def BitSplit(image):
   pX = image.load();
@@ -23,6 +49,63 @@ def BitSplit(image):
       for im in range(len(binData)): BinPx[im][x, y] = int(binData[im]);
 
   return Layers;
+
+def IsolateObjects(threshPath, originalPath, separate=False):
+  original = cv2.imread(originalPath, cv2.IMREAD_UNCHANGED);
+  img = cv2.imread(threshPath, cv2.IMREAD_UNCHANGED);
+  cnt, grgb = cv2.findContours(img, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE);
+
+  isolatedObjects = [];
+  for contourIndex in range(len(cnt)):
+    isolatedObjects.append(np.ones(img.shape[:2], dtype="uint8") * 255);
+    mask = isolatedObjects[contourIndex];
+    cv2.drawContours(mask, cnt, contourIndex, 0, -1);
+    img = cv2.bitwise_and(img, img, mask=mask);
+    if (separate): 
+      isolatedObjects[contourIndex] = cv2.bitwise_and(original, cv2.bitwise_not(isolatedObjects[contourIndex]));
+  print("Total Objects:", len(isolatedObjects));
+  return isolatedObjects;
+
+def ThreshAndPrep(img):
+  Struct = [
+    0, 0, 1, 0, 0,
+    0, 0, 1, 0, 0,
+    1, 1, 1, 1, 1,
+    0, 0, 1, 0, 0,
+    0, 0, 1, 0, 0
+  ]
+
+  Struct2 = [
+    0, 1, 0,
+    1, 1, 1,
+    0, 1, 0,
+  ]
+
+
+  Input = toGrayScale(img);
+  Input = SharpenImage(img);
+  Input = GlobalThreshold(Input, 210);
+  Input = Erode(Input, Struct);
+  Input = Erode(Input, Struct2);
+  Input = Dilate(Input, Struct);
+  Input = Dilate(Input, Struct2);
+  Input = BinInvert(Input);
+  Input = BinZeroPad(Input, 2);
+
+  return Input;
+
+def Circularity(imgPath):
+  Input = cv2.imread(imgPath);
+  Input = cv2.cvtColor(Input, cv2.COLOR_BGR2GRAY);
+
+  cnt, grgb = cv2.findContours(Input, cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE);
+  cnt = cnt[0];
+
+  area = cv2.contourArea(cnt);
+  perimeter = cv2.arcLength(cnt, True);
+  circularity = 4 * np.pi * (area / (perimeter * perimeter));
+
+  return circularity;
 
 def Dilate(image, struct):
   sW, sH = image.size;
@@ -44,7 +127,6 @@ def Dilate(image, struct):
       rX[x, y] = max(Values);
       LocalArea = [];
       Values = [];
-  Result.save("Test.png");
   return Result;
 
 def Erode(image, struct):
@@ -70,50 +152,75 @@ def Erode(image, struct):
 
   return Result;
 
+def DetectObject(image, object):
+  start_time = time.time();
+  Struct = [
+    0, 0, 1, 0, 0,
+    0, 0, 1, 0, 0,
+    1, 1, 1, 1, 1,
+    0, 0, 1, 0, 0,
+    0, 0, 1, 0, 0
+  ]
+
+  object = toGrayScale(object);
+  Original = toGrayScale(image);
+  
+  Sharp = SharpenImage(Original);
+  print("Applied Enhancement", (time.time() - start_time));
+  Median = MedianFilter(Sharp, 5);
+  print("Applied Noise Redcution", (time.time() - start_time))
+  Segmented =  LocalThreshold(Median, 5);
+  print("Applied Thresholding", (time.time() - start_time))
+  BinNoiseRed = Erode(Segmented, Struct);
+  BinNoiseRed = Dilate(BinNoiseRed, Struct);
+  print("Applied Morphology", (time.time() - start_time))
+  Multiply = MultiplyImages(BinNoiseRed, Original);
+  Isolated = FindObject(Multiply, object);
+  print("Object Located", (time.time() - start_time));
+  
+  return Isolated;
+
 def FindObject(image1, image2):
   sW, sH = image1.size;
   mW, mH = image2.size;
   pX = image1.load();
   mX = image2.load();
-  wSegC = round(sW / mW);
-  hSegC = round(sH / mH);
-  wSegL = mW;
-  hSegL = mH;
   Output = Image.new('1', (sW, sH), 0);
   oX = Output.load();
 
   modValues = 0;
-  origValues = [];
+  origValues = 0;
+  smallestSectionIndex = -1;
+  smallestSectionValues = 1_000_000
 
   for x in range(mW):
     for y in range(mH):
       modValues+= mX[x, y];
 
+
   index = 0;
-  for wSeg in range(wSegC):
-    for hSeg in range(hSegC):
-      origValues.append(0)
-      for x in range(wSeg * wSegL, (wSeg + 1) * wSegL):
-        for y in range(hSeg * hSegL, (hSeg + 1) * hSegL):
-          if (x >= sW or y >= sH): continue;
-          origValues[index] += pX[x, y];
-      origValues[index] = abs((modValues - origValues[index]) / origValues[index]);
+  completion = 10;
+  for x in range(0, sW - mW):
+    for y in range(0, sH - mH):
+      for subX in range(mW):
+        for subY in range(mH):
+          if (not origValues): continue;
+          origValues += pX[x + subX, y + subY];
+      origValues = abs((modValues - origValues) / (origValues + 1));
+      if (origValues < smallestSectionValues): 
+        smallestSectionIndex = index;
+        smallestSectionValues = origValues;
       index += 1;
-  
-  Location = smallestIndex(origValues);
-  print(origValues);
+
+  Location = smallestSectionIndex;
   
   index = 0;
-  for wSeg in range(wSegC):
-    for hSeg in range(hSegC):
-      if (index == Location):
-        for x in range(wSeg * wSegL, (wSeg + 1) * wSegL):
-          for y in range(hSeg * hSegL, (hSeg + 1) * hSegL):
-            if (x >= sW or y >= sH): continue;
-            if (x == wSeg * wSegL or 
-            x == (wSeg + 1) * wSegL - 1 or
-            y == hSeg * hSegL or
-            y == (hSeg + 1) * hSegL - 1): oX[x, y] = 1;
+  for x in range(0, sW - mW):
+    for y in range(0, sH - mH):
+      if (index == smallestSectionIndex):
+        for subX in range(mW):
+          for subY in range(mH):
+            oX[x + subX, y + subY] = 1;
         return Output;
       index += 1;
 
@@ -315,58 +422,56 @@ def LocalThreshold(image, split=3):
         segData = [];
   return Result;
 
-def NiblackThreshold(image, split=3, k=-.2):
+def NiblackThreshold(image, size=3, k=-.1):
+  image = toGrayScale(image);
   sW, sH = image.size;
   pX = image.load();
   Result = Image.new("1", (sW, sH), 0);
   rX = Result.load();
-  wSegL = round(sW / split);
-  hSegL = round(sH / split);
+  offset = int(np.floor(size/2));
 
   segData = [];
   segMax, segMin = 0, 0;
   segT = 0;
   
-  for wSeg in range(split):
-    for hSeg in range(split):
+  for x in range(offset, sW - offset):
+    for y in range(offset, sH - offset):
       for currPass in range(2):
-        for x in range(wSeg * wSegL, (wSeg + 1) * wSegL):
-          for y in range(hSeg * hSegL, (hSeg + 1) * hSegL):
-            if (x >= sW or y >= sH): continue;
-            if (not currPass): segData.append(pX[x, y]);
+        for subX in range(-1 * offset, offset + 1):
+          for subY in range(-1 * offset, offset + 1):
+            if (currPass == 0): segData.append(pX[x + subX, y + subY]);
             else: 
-              if (pX[x, y] <= segT): rX[x, y] = 0;
+              if (pX[x + subX, y] <= segT): rX[x, y] = 0;
               else: rX[x, y] = 1;
-        if (not currPass): 
+        if (currPass == 0): 
           segMax = max(segData);
           segMin = min(segData);
-          segT = round((segMax + segMin) / 2) + (k * statistics.stdev(segData))
+          segT = round((segMax + segMin) / 2) + (k * statistics.stdev(segData));
         segData = [];
   return Result;
 
-def SauvolaThreshold(image, split=3, k=.5, R=128):
+def SauvolaThreshold(image, size=3, k=.5, R=128):
+  image = toGrayScale(image);
   sW, sH = image.size;
   pX = image.load();
   Result = Image.new("1", (sW, sH), 0);
   rX = Result.load();
-  wSegL = round(sW / split);
-  hSegL = round(sH / split);
+  offset = int(np.floor(size/2));
 
   segData = [];
   segMax, segMin = 0, 0;
   segT = 0;
   
-  for wSeg in range(split):
-    for hSeg in range(split):
+  for x in range(offset, sW - offset):
+    for y in range(offset, sH - offset):
       for currPass in range(2):
-        for x in range(wSeg * wSegL, (wSeg + 1) * wSegL):
-          for y in range(hSeg * hSegL, (hSeg + 1) * hSegL):
-            if (x >= sW or y >= sH): continue;
-            if (not currPass): segData.append(pX[x, y]);
+        for subX in range(-1 * offset, offset + 1):
+          for subY in range(-1 * offset, offset + 1):
+            if (currPass == 0): segData.append(pX[x + subX, y + subY]);
             else: 
-              if (pX[x, y] <= segT): rX[x, y] = 0;
+              if (pX[x + subX, y] <= segT): rX[x, y] = 0;
               else: rX[x, y] = 1;
-        if (not currPass): 
+        if (currPass == 0): 
           segMax = max(segData);
           segMin = min(segData);
           segT = round((segMax + segMin) / 2) * (1 + k * ((statistics.stdev(segData)/R) - 1))
