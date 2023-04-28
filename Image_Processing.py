@@ -2,15 +2,57 @@
 
 from PIL import Image, ImageOps, ImageFilter
 import matplotlib.pyplot as plt
+from skimage import feature
 import math, random, statistics, sys
 import numpy as np
 import time
 import cv2
 
 
-#################### Image Processing Methods
+def CreateGaussianPyramid(G1, lvls):
+  gp1 = [G1]
+  for i in range(lvls):
+    G1 = cv2.GaussianBlur(G1, (25, 25), 0)
+    G1 = cv2.resize(G1, (0,0), fx=0.5, fy=0.5)
+    gp1.append(G1)
 
-########## Utility Methods
+  return gp1
+
+def HistogramEntropy(Hist):
+  for v in range(256):
+    Hist[v] = -1 * Hist[v] * math.log2(Hist[v] + 1)
+  return Hist;
+
+def MergeImages(Input_1, Input_2):
+  L_Mask = np.repeat(np.tile(np.linspace(1, 0, Input_1.shape[1]), (Input_1.shape[0], 1))[:, :, np.newaxis], 3, axis=2)
+  R_Mask = np.repeat(np.tile(np.linspace(0, 1, Input_2.shape[1]), (Input_2.shape[0], 1))[:, :, np.newaxis], 3, axis=2)
+
+  Merged = np.uint8(Input_1 * L_Mask + Input_2 * R_Mask)
+  return Merged
+
+def CreateLaplacianPyramid(pyr):
+  lvls = len(pyr)
+  lp1 = [pyr[lvls - 1]]
+  op = []
+  for i in range(lvls - 1, 0, -1):
+    L1 = pyr[i]
+    T = cv2.convertScaleAbs(cv2.Laplacian(L1, cv2.CV_64F))
+    op.append(T)
+    T = cv2.pyrDown(T)
+    T = cv2.pyrUp(T)
+    L1 = cv2.pyrDown(L1)
+    L1 = cv2.pyrUp(L1)
+    L1 = cv2.subtract(L1, T)
+    lp1.append(L1)
+
+  return [lp1, op]
+    
+
+def LBP(imagePath): 
+  img = cv2.imread(imagePath, cv2.IMREAD_GRAYSCALE);
+  LBP = feature.local_binary_pattern(img, 24, 3, method="uniform");
+  (hist, _) = np.histogram(LBP.ravel(), bins=range(0, 27), range=(0, 27))
+  return hist.tolist();
 
 def getTime():
   return time.time();
@@ -81,7 +123,6 @@ def ThreshAndPrep(img):
     0, 1, 0,
   ]
 
-
   Input = toGrayScale(img);
   Input = SharpenImage(img);
   Input = GlobalThreshold(Input, 210);
@@ -105,7 +146,7 @@ def Circularity(imgPath):
   perimeter = cv2.arcLength(cnt, True);
   circularity = 4 * np.pi * (area / (perimeter * perimeter));
 
-  return circularity;
+  return [circularity, area, perimeter];
 
 def Dilate(image, struct):
   sW, sH = image.size;
@@ -541,8 +582,6 @@ def ApplyMask(image, mask):
 
   return Result;
       
-########## Image Arithmetic
-
 def AddImages(image1, image2, alpha = 1):
   if (alpha > 1): alpha = 1;
   if (alpha < 0): alpha = 0;
@@ -582,8 +621,6 @@ def MultiplyImages(image1, image2, alpha=1):
       rX[x, y] = p1[x, y] * p2[x, y] * alpha;
   return Result;
 
-########## Image Filters
-
 def AlphaTrim(image, alpha=0, size=3):
   offset = math.floor(size / 2);
   
@@ -608,7 +645,6 @@ def AlphaTrim(image, alpha=0, size=3):
         Neighborhood = [];
         AlphaTrim = [];
   return Result;
-
 
 def ContrastStretch(image): 
   sW, sH = image.size;
@@ -655,8 +691,6 @@ def SmoothImage(image, size=3):
       localMatrix = [];
   return Output;
 
-########## Noise Generations
-
 def CreateGaussian(image, std):
   w, h = image.size;
   guassianNoise = Image.new('L', (w, h), 0);
@@ -682,8 +716,6 @@ def CreateImpulse(image, chance):
           noisePx[x, y] = 255;
         else: noisePx[x, y] = 0;
   return noiseResult;
-
-########## Noise Filters
 
 def MinFilter(image, size=3):
   return image.filter(ImageFilter.MinFilter(size));
